@@ -1,0 +1,97 @@
+<%#
+kind: provision
+name: Arch Linux default
+model: ProvisioningTemplate
+oses:
+- Archlinux
+test_on:
+- host4dhcp
+- host6dhcp
+- host4and6dhcp
+- host4static
+- host6static
+description: |
+  The provisioning template for Arch Linux.
+  To customize the installation, modify the host parameters.
+
+  This template accepts the following parameters:
+  - lang: string (default="en_US.UTF-8")
+  - keyboard: string (default="us")
+  - additional-packages: string (default=undef)
+
+  Reference links:
+  - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html/installation_guide/s1-kickstart2-options
+  - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/installation_guide/sect-kickstart-syntax
+  - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/performing_an_advanced_rhel_installation/kickstart-commands-and-options-reference_installing-rhel-as-an-experienced-user
+-%>
+# Some variables
+<%
+hostname     = 
+packages     = [ 'vim', 'openssh' ]
+lang         = host_param('lang') || 'en_US.UTF-8'
+keyboard     = host_param('keyboard') || 'us'
+sys_language = lang.split('.')[0]
+sys_encoding = lang.split('.')[1]
+%>
+
+
+
+
+# Read in disk layout and replace 'ARCH_SYSTEM_DISK' with the very first disk (lsblk)
+cat << EOF > user_disk_layout.json
+<%= @host.diskLayout%>
+EOF
+
+disk="$(lsblk --nodeps --paths --output NAME,TYPE | grep disk | cut -d ' ' -f 1 | head -1)"
+sed -i "s|ARCH_SYSTEM_DISK|$disk|g" user_disk_layout.json
+
+
+# The actual install settings
+echo '
+{
+    "config_version": "2.5.5",
+    "debug": false,
+    "harddrives": [
+        "'$disk'"
+    ],
+    "hostname": "<%= @host.name -%>",
+    "keyboard-layout": "<%= keyboard -%>",
+    "bootloader": "grub-install",
+    "profile": {
+	"path": "/usr/lib/python3.10/site-packages/archinstall/profiles/minimal.py"
+    },
+    "nic": {
+        "dhcp": true,
+        "dns": null,
+        "gateway": null,
+        "iface": null,
+        "ip": null,
+        "type": "nm"
+    },
+    "no_pkg_lookups": false,
+    "packages": <%= packages -%>,
+    "offline": false,
+    "script": "guided",
+    "silent": false,
+    "sys-encoding": "<%= sys_encoding -%>",
+    "sys-language": "<%= sys_language -%>",
+    "version": "2.5.5"
+}' > user_configuration.json
+
+
+# Actual install
+archinstall --silent --config user_configuration.json --disk_layouts user_disk_layout.json
+
+# Access to root account (passwords are not well implemented yet)
+arch-chroot /mnt/archinstall usermod -p '<%= root_pass %>' root
+
+# SSH (EOW = End Of Wrapper since EOF is used in the snippet)
+arch-chroot /mnt/archinstall systemctl enable sshd.service
+cat << 'EOW' > deploy_ssh_keys.sh
+<%= snippet('remote_execution_ssh_keys') %>
+EOW
+arch-chroot /mnt/archinstall /bin/bash < deploy_ssh_keys.sh
+
+# DONE - Let Foreman know and reboot
+<%= indent(2, skip1: true) { snippet('built', :variables => { :endpoint => 'built', :method => 'POST' }) } -%>
+reboot

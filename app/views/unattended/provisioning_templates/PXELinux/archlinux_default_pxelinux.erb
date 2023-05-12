@@ -1,0 +1,48 @@
+<%#
+kind: PXELinux
+name: Arch Linux default PXELinux
+model: ProvisioningTemplate
+oses:
+- Archlinux
+description: |
+  The template to render PXELinux bootloader configuration for Arch Linux.
+  The output is deployed on the host's subnet TFTP proxy.
+test_on:
+- host4dhcp
+- host6dhcp
+- host4and6dhcp
+- host4static
+- host6static
+-%>
+# This file was deployed via '<%= template_name %>' template
+<%
+  timeout = host_param('loader_timeout').to_i * 10
+  timeout = 100 if timeout.nil? || timeout <= 0
+  arch_iso_url    = foreman_server_url.gsub('https', 'http') + '/pub/archlinux/'
+  arch_iso_kernel = arch_iso_url + 'arch/boot/x86_64/vmlinuz-linux'
+  arch_iso_initrd = arch_iso_url + 'arch/boot/x86_64/initramfs-linux.img'
+-%>
+DEFAULT menu
+MENU TITLE Foreman Arch Linux
+TIMEOUT <%= timeout %>
+ONTIMEOUT archlinux
+
+LABEL archlinux
+    MENU LABEL Arch Linux
+    LINUX <%= arch_iso_kernel %>
+    INITRD <%= arch_iso_initrd %>
+    APPEND archisobasedir=arch archiso_http_srv=<%= arch_iso_url %> cms_verify=y ip=::: script=<%= foreman_url('provision') %>
+    IPAPPEND 2
+    TEXT HELP
+    Arch Linux - Autoprovision
+    ENDTEXT
+    
+LABEL archlinux_no_script
+    MENU LABEL Arch Linux - No Script
+    LINUX <%= arch_iso_kernel %>
+    INITRD <%= arch_iso_initrd %>
+    APPEND archisobasedir=arch archiso_http_srv=<%= arch_iso_url %> cms_verify=y ip=:::
+    IPAPPEND 2
+    TEXT HELP
+    Arch Linux - Simply the Arch Linux live iso
+    ENDTEXT
