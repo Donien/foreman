@@ -18,41 +18,47 @@ description: |
   - lang: string (default="en_US.UTF-8")
   - keyboard: string (default="us")
   - additional-packages: string (default=undef)
-
-  Reference links:
-  - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html/installation_guide/s1-kickstart2-options
-  - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/installation_guide/sect-kickstart-syntax
-  - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/performing_an_advanced_rhel_installation/kickstart-commands-and-options-reference_installing-rhel-as-an-experienced-user
+  - lukspass: string (default=@host.name)
 -%>
-# Some variables
 <%
-hostname     = 
 packages     = [ 'vim', 'openssh' ]
 lang         = host_param('lang') || 'en_US.UTF-8'
 keyboard     = host_param('keyboard') || 'us'
 sys_language = lang.split('.')[0]
 sys_encoding = lang.split('.')[1]
+lukspass     = host_param('lukspass') || @host.name
+ptable_hash  = parse_json(@host.diskLayout)
 %>
 
 
+# Get the very first disk (lsblk) and replace the variable '$disk' in the json strings
+disk="$(lsblk --nodeps --paths --output NAME,TYPE | grep disk | cut -d ' ' -f 1 | head -1)"
 
-
-# Read in disk layout and replace 'ARCH_SYSTEM_DISK' with the very first disk (lsblk)
+# Read in disk layout
 cat << EOF > user_disk_layout.json
-<%= @host.diskLayout%>
+<%= to_json(ptable_hash['user_disk_layout']) %>
 EOF
 
-disk="$(lsblk --nodeps --paths --output NAME,TYPE | grep disk | cut -d ' ' -f 1 | head -1)"
-sed -i "s|ARCH_SYSTEM_DISK|$disk|g" user_disk_layout.json
+<% if ptable_hash.key?('user_configuration') and ptable_hash['user_configuration'].key?('disk_encryption') %>
+cat << EOF > user_credentials.json
+{
+    "encryption_password": "<%= lukspass %>"
+}
+EOF
+<% end %>
+
 
 
 # The actual install settings
-echo '
+cat << EOF > user_configuration.json
 {
     "config_version": "2.5.5",
     "debug": false,
+    <%- if ptable_hash.key?('user_configuration') and ptable_hash['user_configuration'].key?('disk_encryption') -%>
+    "disk_encryption": <%= to_json(ptable_hash['user_configuration']['disk_encryption']) %>,
+    <%- end -%>
     "harddrives": [
-        "'$disk'"
+        "$disk"
     ],
     "hostname": "<%= @host.name -%>",
     "keyboard-layout": "<%= keyboard -%>",
@@ -76,11 +82,11 @@ echo '
     "sys-encoding": "<%= sys_encoding -%>",
     "sys-language": "<%= sys_language -%>",
     "version": "2.5.5"
-}' > user_configuration.json
-
+}
+EOF
 
 # Actual install
-archinstall --silent --config user_configuration.json --disk_layouts user_disk_layout.json
+archinstall --silent --config user_configuration.json --disk_layouts user_disk_layout.json <% if ptable_hash.key?('user_configuration') and ptable_hash['user_configuration'].key?('disk_encryption') %> --creds user_credentials.json <% end %>
 
 # Access to root account (passwords are not well implemented yet)
 arch-chroot /mnt/archinstall usermod -p '<%= root_pass %>' root

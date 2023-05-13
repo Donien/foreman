@@ -1,6 +1,6 @@
 <%#
 kind: ptable
-name: Arch Linux default
+name: Arch Linux encrypted
 model: Ptable
 oses:
 - Archlinux
@@ -9,6 +9,27 @@ oses:
 boot_start   = 3
 boot_size    = 512
 partitioning = {
+   "user_configuration": {
+      "disk_encryption": {
+         "encryption_type": "partition",
+         "partitions": {
+            "$disk": [
+               {
+                  "encrypted": false,
+                  "filesystem": {
+                     "format": "ext4",
+                     "mount_options": []
+                  },
+                  "mountpoint": "/",
+                  "size": "100%",
+                  "start": "#{boot_size + boot_start}MiB",
+                  "type": "primary",
+                  "wipe": true
+               }
+            ]
+         }
+      }
+   },
    "user_disk_layout": {
       "$disk": {
          "partitions": [
